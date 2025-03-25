@@ -101,33 +101,42 @@ async function getRepositoryList() {
   let page = 1;
   let hasMoreRepos = true;
   
+  console.log(`Fetching repositories for: ${config.org || config.username}...`);
+  
   while (hasMoreRepos) {
     let response;
     
-    if (config.org) {
-      // Get organization repositories
-      response = await octokit.repos.listForOrg({
-        org: config.org,
-        per_page: 100,
-        page
-      });
-    } else {
-      // Get user repositories
-      response = await octokit.repos.listForUser({
-        username: config.username || (await octokit.users.getAuthenticated()).data.login,
-        per_page: 100,
-        page
-      });
-    }
-    
-    if (response.data.length === 0) {
+    try {
+      if (config.org) {
+        // Get organization repositories
+        response = await octokit.repos.listForOrg({
+          org: config.org,
+          per_page: 100,
+          page
+        });
+      } else {
+        // Get user repositories
+        response = await octokit.repos.listForUser({
+          username: config.username || (await octokit.users.getAuthenticated()).data.login,
+          per_page: 100,
+          page
+        });
+      }
+      
+      if (response.data.length === 0) {
+        hasMoreRepos = false;
+      } else {
+        repos.push(...response.data);
+        page++;
+        console.log(`Fetched page ${page-1}, found ${response.data.length} repositories`);
+      }
+    } catch (error) {
+      console.error('Error fetching repositories:', error);
       hasMoreRepos = false;
-    } else {
-      repos.push(...response.data);
-      page++;
     }
   }
   
+  console.log(`Total repositories found: ${repos.length}`);
   return repos;
 }
 
@@ -138,22 +147,46 @@ async function processRepository(repo) {
   try {
     // Check in the target branch (develop) or fall back to default branch if not specified
     const branchToCheck = config.targetBranch || repo.default_branch;
-    await checkPackageFiles(repoFullName, branchToCheck);
+    
+    // Try to get the branch to see if it exists
+    try {
+      const [owner, repoName] = repoFullName.split('/');
+      await octokit.repos.getBranch({
+        owner,
+        repo: repoName,
+        branch: branchToCheck
+      });
+      
+      // Branch exists, check package files
+      await checkPackageFiles(repoFullName, branchToCheck);
+    } catch (branchError) {
+      if (branchError.status === 404) {
+        // Branch doesn't exist, note this but don't treat as error
+        console.log(`Branch '${branchToCheck}' doesn't exist in ${repoFullName}, skipping`);
+      } else {
+        // Other error, rethrow
+        throw branchError;
+      }
+    }
   } catch (error) {
     console.error(`Error processing repository ${repoFullName}:`, error);
-    // Add to results as error
-    results.push({
-      repository: repoFullName,
-      branch: 'ERROR',
-      packageFile: 'ERROR',
-      version: `Error: ${error.message}`
-    });
+    // Only add to results as error if it's not a 404 (not found) error
+    if (error.status !== 404) {
+      results.push({
+        repository: repoFullName,
+        branch: 'ERROR',
+        packageFile: 'ERROR',
+        version: `Error: ${error.message}`,
+        hasError: true
+      });
+    }
   }
 }
 
 // Check all configured package files in a repo branch
 async function checkPackageFiles(repoFullName, branch) {
   const [owner, repo] = repoFullName.split('/');
+  let packageFound = false;
   
   for (const packageFile of config.packageFiles) {
     try {
@@ -181,6 +214,7 @@ async function checkPackageFiles(repoFullName, branch) {
         for (const depType of dependencyTypes) {
           if (packageJson[depType] && packageJson[depType][config.packageName]) {
             // Found the package!
+            packageFound = true;
             results.push({
               repository: repoFullName,
               branch,
@@ -201,6 +235,11 @@ async function checkPackageFiles(repoFullName, branch) {
         console.error(`Error retrieving ${packageFile} from ${repoFullName}:`, contentError);
       }
     }
+  }
+  
+  // If no package files were found with the target package, log this information
+  if (!packageFound) {
+    console.log(`No ${config.packageName} package found in ${repoFullName} (${branch})`);
   }
 }
 
