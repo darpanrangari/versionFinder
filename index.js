@@ -122,6 +122,7 @@ async function getRepositoryList() {
           page
         });
       }
+      console.log(response);
       
       if (response.data.length === 0) {
         hasMoreRepos = false;
