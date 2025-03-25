@@ -1,0 +1,258 @@
+pipeline {
+    agent {
+        // Run on a Jenkins agent that has Node.js installed
+        label 'nodejs'
+    }
+    
+    // Configure to run overnight
+    triggers {
+        cron('0 2 * * *') // Runs at 2 AM daily
+    }
+    
+    environment {
+        // Store GitHub credentials securely
+        GH_TOKEN = credentials('github-enterprise-token')
+        // GitHub Enterprise base URL
+        GH_BASE_URL = 'https://github.yourdomain.com/api/v3'
+        // Organization to scan
+        GH_ORG = 'your-organization-name'
+        // Branch to scan
+        TARGET_BRANCH = 'develop'
+        // Package to find
+        PACKAGE_NAME = 'babydol'
+        // Output filename
+        OUTPUT_FILE = 'babydol-versions.json'
+        // Node.js setup
+        NODE_OPTIONS = '--max-old-space-size=4096' // Increase memory limit if needed
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // Checkout the repository containing the script
+                checkout scm
+                
+                // Alternatively, if not using SCM:
+                // git branch: 'main', url: 'https://github.com/your-org/babydol-tracker.git'
+            }
+        }
+        
+        stage('Setup') {
+            steps {
+                // Check Node.js installation
+                sh 'node --version'
+                sh 'npm --version'
+                
+                // Install dependencies
+                sh 'npm ci'
+            }
+        }
+        
+        stage('Run Tracker') {
+            steps {
+                // Run the tracker script using npm
+                sh 'npm start'
+            }
+        }
+        
+        stage('Archive Results') {
+            steps {
+                // Archive the CSV as a Jenkins artifact
+                archiveArtifacts artifacts: "${OUTPUT_FILE}", fingerprint: true
+            }
+        }
+        
+        stage('Publish Report') {
+            steps {
+                // Create a simple HTML report
+                script {
+                    def htmlReport = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Babydol Package Version Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .error { color: red; }
+        .metadata { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .metadata dl { display: grid; grid-template-columns: 1fr 2fr; row-gap: 5px; }
+        .metadata dt { font-weight: bold; }
+        .success { color: green; }
+        .warning { color: orange; }
+    </style>
+    <script>
+        window.onload = function() {
+            // Load JSON data and populate table
+            fetch('babydol-versions.json')
+                .then(response => response.json())
+                .then(data => {
+                    // Populate metadata section
+                    document.getElementById('generated-at').textContent = new Date(data.metadata.generatedAt).toLocaleString();
+                    document.getElementById('package-name').textContent = data.metadata.packageName;
+                    document.getElementById('target-branch').textContent = data.metadata.targetBranch;
+                    document.getElementById('organization').textContent = data.metadata.organization;
+                    document.getElementById('total-repos').textContent = data.metadata.totalRepositoriesScanned;
+                    
+                    // Create stats for versions
+                    const versions = {};
+                    let errorCount = 0;
+                    
+                    data.repositories.forEach(repo => {
+                        if (repo.hasError) {
+                            errorCount++;
+                        } else if (repo.version) {
+                            versions[repo.version] = (versions[repo.version] || 0) + 1;
+                        }
+                    });
+                    
+                    const versionsList = Object.entries(versions)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([version, count]) => `${version}: ${count} repos`);
+                    
+                    document.getElementById('version-breakdown').innerHTML = 
+                        versionsList.length > 0 ? versionsList.join('<br>') : 'No versions found';
+                    
+                    document.getElementById('error-count').textContent = errorCount;
+                    document.getElementById('error-count').className = 
+                        errorCount > 0 ? 'warning' : 'success';
+                    
+                    // Create table of repositories
+                    const table = document.getElementById('data-table');
+                    
+                    // Create header row
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    const headers = ['Repository', 'Branch', 'Package File', 'Dependency Type', 'Version'];
+                    
+                    headers.forEach(header => {
+                        const th = document.createElement('th');
+                        th.textContent = header;
+                        headerRow.appendChild(th);
+                    });
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+                    
+                    // Create table body
+                    const tbody = document.createElement('tbody');
+                    data.repositories.forEach(repo => {
+                        const row = document.createElement('tr');
+                        
+                        // Add cells
+                        const cells = [
+                            repo.repository,
+                            repo.branch,
+                            repo.packageFile,
+                            repo.dependencyType || '',
+                            repo.version
+                        ];
+                        
+                        cells.forEach(cellValue => {
+                            const td = document.createElement('td');
+                            td.textContent = cellValue;
+                            if (repo.hasError) {
+                                td.className = 'error';
+                            }
+                            row.appendChild(td);
+                        });
+                        
+                        tbody.appendChild(row);
+                    });
+                    table.appendChild(tbody);
+                })
+                .catch(error => {
+                    document.getElementById('error-message').textContent = 
+                        'Error loading data: ' + error.message;
+                });
+        }
+    </script>
+</head>
+<body>
+    <h1>Babydol Package Version Report</h1>
+    
+    <div class="metadata">
+        <h2>Report Summary</h2>
+        <dl>
+            <dt>Generated At:</dt>
+            <dd id="generated-at">Loading...</dd>
+            
+            <dt>Package:</dt>
+            <dd id="package-name">Loading...</dd>
+            
+            <dt>Target Branch:</dt>
+            <dd id="target-branch">Loading...</dd>
+            
+            <dt>Organization:</dt>
+            <dd id="organization">Loading...</dd>
+            
+            <dt>Repositories Scanned:</dt>
+            <dd id="total-repos">Loading...</dd>
+            
+            <dt>Error Count:</dt>
+            <dd id="error-count">Loading...</dd>
+        </dl>
+        
+        <h3>Version Distribution:</h3>
+        <div id="version-breakdown">Loading...</div>
+    </div>
+    
+    <div id="error-message" class="error"></div>
+    <h2>Repository Details</h2>
+    <table id="data-table"></table>
+</body>
+</html>
+'''
+                    writeFile file: 'report.html', text: htmlReport
+                }
+                
+                // Publish HTML report
+                publishHTML([
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: '.',
+                    reportFiles: 'report.html',
+                    reportName: 'Babydol Version Report',
+                    reportTitles: ''
+                ])
+            }
+        }
+        
+        stage('Notify') {
+            steps {
+                // Send email notification with report link
+                emailext (
+                    subject: "Babydol Package Version Report",
+                    body: """
+                    <p>The latest babydol package version report has been generated.</p>
+                    <p>You can view the report <a href="${BUILD_URL}HTML_Report/">here</a>.</p>
+                    <p>The raw CSV data is also available as a build artifact.</p>
+                    """,
+                    mimeType: 'text/html',
+                    to: 'your-team@example.com',
+                    attachmentsPattern: "${OUTPUT_FILE}"
+                )
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Babydol version tracking completed successfully!'
+        }
+        failure {
+            echo 'Babydol version tracking failed!'
+            // You could add additional failure notifications here
+        }
+        always {
+            // Clean workspace after build
+            cleanWs(cleanWhenNotBuilt: false,
+                    deleteDirs: true,
+                    disableDeferredWipeout: true,
+                    notFailBuild: true)
+        }
+    }
+}

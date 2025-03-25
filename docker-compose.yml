@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  babydol-tracker:
+    build: .
+    environment:
+      - GH_TOKEN=${GH_TOKEN} # This must be provided
+      - GH_BASE_URL=${GH_BASE_URL:-https://github.yourdomain.com/api/v3}
+      - GH_ORG=${GH_ORG} # Organization to scan
+      - TARGET_BRANCH=${TARGET_BRANCH:-develop}
+      - PACKAGE_NAME=${PACKAGE_NAME:-babydol}
+      - OUTPUT_FILE=/app/output/babydol-versions.json
+    volumes:
+      - ./output:/app/output
