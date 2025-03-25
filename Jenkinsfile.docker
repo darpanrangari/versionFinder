@@ -12,17 +12,12 @@ pipeline {
     environment {
         // Store GitHub credentials securely
         GH_TOKEN = credentials('github-enterprise-token')
-        // GitHub Enterprise base URL
-        GH_BASE_URL = 'https://github.yourdomain.com/api/v3'
-        // Organization to scan
-        GH_ORG = 'your-organization-name'
-        // Branch to scan
-        TARGET_BRANCH = 'develop'
-        // Package to find
-        PACKAGE_NAME = 'babydol'
+        
+        // Load environment variables from .env file
+        // Note: We'll manually load them since Jenkins doesn't support dotenv directly
+        
         // Output path (inside container and workspace)
         OUTPUT_PATH = "${WORKSPACE}/output"
-        OUTPUT_FILE = "${OUTPUT_PATH}/babydol-versions.json"
     }
     
     stages {
@@ -33,6 +28,31 @@ pipeline {
                 
                 // Ensure output directory exists
                 sh 'mkdir -p ${OUTPUT_PATH}'
+                
+                // Load environment variables from .env file
+                script {
+                    // Read .env file and set environment variables
+                    def envFile = readFile('.env').trim()
+                    envFile.split('\n').each { line -> 
+                        if (line.trim() && !line.startsWith('#')) {
+                            def parts = line.split('=', 2)
+                            if (parts.length == 2) {
+                                def key = parts[0].trim()
+                                def value = parts[1].trim()
+                                // Only set if not already defined
+                                if (!env[key]) {
+                                    env[key] = value
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Override with specific settings if needed
+                    env.GH_ORG = env.GH_ORG ?: 'your-organization-name'
+                    env.OUTPUT_FILE = "${OUTPUT_PATH}/babydol-versions.json"
+                    
+                    echo "Configuration loaded - Org: ${env.GH_ORG}, Branch: ${env.TARGET_BRANCH}, Package: ${env.PACKAGE_NAME}"
+                }
             }
         }
         
@@ -53,6 +73,7 @@ pipeline {
                     -e GH_ORG=${GH_ORG} \
                     -e TARGET_BRANCH=${TARGET_BRANCH} \
                     -e PACKAGE_NAME=${PACKAGE_NAME} \
+                    -e SCAN_PACKAGE_FILES=${SCAN_PACKAGE_FILES} \
                     -e OUTPUT_FILE=/app/output/babydol-versions.json \
                     -v ${OUTPUT_PATH}:/app/output \
                     babydol-tracker

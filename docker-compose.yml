@@ -3,12 +3,18 @@ version: '3'
 services:
   babydol-tracker:
     build: .
+    # Docker Compose automatically reads variables from .env and .env.local files
     environment:
       - GH_TOKEN=${GH_TOKEN} # This must be provided
-      - GH_BASE_URL=${GH_BASE_URL:-https://github.yourdomain.com/api/v3}
+      - GH_BASE_URL=${GH_BASE_URL}
       - GH_ORG=${GH_ORG} # Organization to scan
-      - TARGET_BRANCH=${TARGET_BRANCH:-develop}
-      - PACKAGE_NAME=${PACKAGE_NAME:-babydol}
+      - GH_USERNAME=${GH_USERNAME}
+      - TARGET_BRANCH=${TARGET_BRANCH}
+      - PACKAGE_NAME=${PACKAGE_NAME}
+      - SCAN_PACKAGE_FILES=${SCAN_PACKAGE_FILES}
       - OUTPUT_FILE=/app/output/babydol-versions.json
+      - NODE_OPTIONS=${NODE_OPTIONS}
     volumes:
       - ./output:/app/output
+      # Optional: Uncomment if you want to mount .env.local at runtime instead of building it in
+      # - ./.env.local:/app/.env.local

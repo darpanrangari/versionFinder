@@ -5,6 +5,15 @@ const { Octokit } = require('@octokit/rest');
 const fs = require('fs');
 const path = require('path');
 
+// Load environment variables from .env files if dotenv is available
+try {
+  require('dotenv').config({ path: '.env' });
+  require('dotenv').config({ path: '.env.local', override: true });
+  console.log('Loaded environment variables from .env and .env.local');
+} catch (error) {
+  console.log('Dotenv not available, using environment variables as provided');
+}
+
 // Configuration from environment variables with defaults
 const config = {
   // Your GitHub Enterprise URL (without trailing slash)
@@ -23,12 +32,14 @@ const config = {
   outputFile: process.env.OUTPUT_FILE || 'babydol-versions.json',
   
   // Search in these files (common package.json locations)
-  packageFiles: [
-    'package.json',
-    'frontend/package.json',
-    'client/package.json',
-    'ui/package.json'
-  ],
+  packageFiles: process.env.SCAN_PACKAGE_FILES ? 
+    process.env.SCAN_PACKAGE_FILES.split(',') : 
+    [
+      'package.json',
+      'frontend/package.json',
+      'client/package.json',
+      'ui/package.json'
+    ],
   
   // Target branch to search in
   targetBranch: process.env.TARGET_BRANCH || 'develop',
