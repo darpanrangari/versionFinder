@@ -1,14 +1,17 @@
 // Babydol Package Version Tracker
 // This script scans GitHub Enterprise repositories to identify versions of the 'babydol' package
 
-const { Octokit } = require('@octokit/rest');
-const fs = require('fs');
-const path = require('path');
+import { Octokit } from '@octokit/rest';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 // Load environment variables from .env files if dotenv is available
 try {
-  require('dotenv').config({ path: '.env' });
-  require('dotenv').config({ path: '.env.local', override: true });
+  const dotenv = await import('dotenv');
+  dotenv.config({ path: '.env' });
+  dotenv.config({ path: '.env.local', override: true });
   console.log('Loaded environment variables from .env and .env.local');
 } catch (error) {
   console.log('Dotenv not available, using environment variables as provided');
